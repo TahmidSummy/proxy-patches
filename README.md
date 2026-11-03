@@ -47,10 +47,23 @@ Tested with Reddit 2026.40.0 on Android 17. While scrolling, playing video, swit
 ## 🩹 Patches list
 
 <!-- PATCHES_START EXPANDED -->
+> **[v1.0.0](https://github.com/TahmidSummy/proxy-patches/releases/tag/v1.0.0)**&nbsp;&nbsp;•&nbsp;&nbsp;`main`&nbsp;&nbsp;•&nbsp;&nbsp;1 patches total
+<details open>
+<summary>📦 Reddit&nbsp;&nbsp;•&nbsp;&nbsp;1 patch</summary>
+<br>
 
-<!-- Do not modify this section by hand. The patch list is generated when release.yml creates a new release. -->
+**Package name:** `com.reddit.frontpage`
 
-#### The patch list is shown here after the first release is created.
+**🎯 Supported versions:**
+
+| 2026.40.0 |
+| :---: |
+
+| 💊&nbsp;Patch | 📜&nbsp;Description | ⚙️&nbsp;Options |
+|----------|----------------|-----------|
+| [Proxy](#proxy) | Routes all of the app's traffic through your HTTP or HTTPS proxy, with optional username and password. Nothing goes direct, even if the proxy is down. | • Proxy host<br>• Proxy port<br>• HTTPS (TLS) proxy<br>• Username<br>• Password |
+
+</details>
 
 <!-- PATCHES_END -->
 
