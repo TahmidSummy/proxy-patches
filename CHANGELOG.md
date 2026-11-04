@@ -1,3 +1,9 @@
+## [1.1.0](https://github.com/TahmidSummy/proxy-patches/compare/v1.0.0...v1.1.0) (2026-11-04)
+
+### ✨ New Features
+
+* In-app proxy settings with a Run without proxy switch ([1b9e5da](https://github.com/TahmidSummy/proxy-patches/commit/1b9e5daba30bc27d1fbd7350fadc595475f8f5d0))
+
 ## 1.0.0 (2026-11-03)
 
 ### ✨ New Features
