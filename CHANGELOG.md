@@ -1,3 +1,9 @@
+## [1.2.0](https://github.com/TahmidSummy/proxy-patches/compare/v1.1.0...v1.2.0) (2026-11-04)
+
+### ✨ New Features
+
+* SOCKS5 proxy support ([ff1227f](https://github.com/TahmidSummy/proxy-patches/commit/ff1227f049a7d4c7644d4390acdff0b2d3cf5dde))
+
 ## [1.1.0](https://github.com/TahmidSummy/proxy-patches/compare/v1.0.0...v1.1.0) (2026-11-04)
 
 ### ✨ New Features

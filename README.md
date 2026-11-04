@@ -74,7 +74,7 @@ The only other traffic is the phone's DNS lookup of the proxy's own hostname.
 ## 🩹 Patches list
 
 <!-- PATCHES_START EXPANDED -->
-> **[v1.1.0](https://github.com/TahmidSummy/proxy-patches/releases/tag/v1.1.0)**&nbsp;&nbsp;•&nbsp;&nbsp;`main`&nbsp;&nbsp;•&nbsp;&nbsp;1 patches total
+> **[v1.2.0](https://github.com/TahmidSummy/proxy-patches/releases/tag/v1.2.0)**&nbsp;&nbsp;•&nbsp;&nbsp;`main`&nbsp;&nbsp;•&nbsp;&nbsp;1 patches total
 <details open>
 <summary>📦 Reddit&nbsp;&nbsp;•&nbsp;&nbsp;1 patch</summary>
 <br>
@@ -88,7 +88,7 @@ The only other traffic is the phone's DNS lookup of the proxy's own hostname.
 
 | 💊&nbsp;Patch | 📜&nbsp;Description | ⚙️&nbsp;Options |
 |----------|----------------|-----------|
-| [Proxy](#proxy) | Routes all of the app's traffic through your HTTP or HTTPS proxy, with optional username and password. Change it any time in the app: long-press the app icon → Proxy settings. Nothing goes direct, even if the proxy is down, unless you turn on "Run without proxy" there. | • Proxy host (optional)<br>• Proxy port<br>• HTTPS (TLS) proxy<br>• Username (optional)<br>• Password (optional) |
+| [Proxy](#proxy) | Routes all of the app's traffic through your HTTP, HTTPS or SOCKS5 proxy, with optional username and password. Change it any time in the app: long-press the app icon → Proxy settings. Nothing goes direct, even if the proxy is down, unless you turn on "Run without proxy" there. | • Proxy host (optional)<br>• Proxy port<br>• Proxy type<br>• Username (optional)<br>• Password (optional) |
 
 </details>
 
