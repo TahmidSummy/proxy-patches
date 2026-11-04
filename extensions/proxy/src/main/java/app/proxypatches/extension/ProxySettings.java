@@ -32,23 +32,43 @@ public final class ProxySettings {
     private static final String PREFS = "proxy_patch";
     private static final String SHORTCUT_ID = "proxy_patch_settings";
 
+    public static final String TYPE_HTTP = "http";
+    public static final String TYPE_HTTPS = "https";
+    public static final String TYPE_SOCKS5 = "socks5";
+
+    static String normalizeType(String t) {
+        if (t == null) return TYPE_HTTPS;
+        t = t.trim().toLowerCase();
+        if (t.equals(TYPE_HTTP) || t.equals(TYPE_SOCKS5)) return t;
+        return TYPE_HTTPS;
+    }
+
     /** Immutable snapshot of the settings. */
     public static final class Values {
         public final String host;
         public final int port;
-        public final boolean useTls;
+        /** {@link #TYPE_HTTP}, {@link #TYPE_HTTPS} (TLS to the proxy) or {@link #TYPE_SOCKS5}. */
+        public final String type;
         public final String username;
         public final String password;
         /** "Run without proxy": connect directly instead of through the proxy. */
         public final boolean direct;
 
-        public Values(String host, int port, boolean useTls, String username, String password, boolean direct) {
+        public Values(String host, int port, String type, String username, String password, boolean direct) {
             this.host = host == null ? "" : host.trim();
             this.port = port;
-            this.useTls = useTls;
+            this.type = normalizeType(type);
             this.username = username == null ? "" : username;
             this.password = password == null ? "" : password;
             this.direct = direct;
+        }
+
+        public boolean useTls() {
+            return TYPE_HTTPS.equals(type);
+        }
+
+        public boolean isSocks() {
+            return TYPE_SOCKS5.equals(type);
         }
 
         public boolean isConfigured() {
@@ -71,7 +91,7 @@ public final class ProxySettings {
     private ProxySettings() {}
 
     static Values defaults() {
-        return new Values(ProxyConfig.host(), ProxyConfig.port(), ProxyConfig.useTls(),
+        return new Values(ProxyConfig.host(), ProxyConfig.port(), ProxyConfig.type(),
                 ProxyConfig.username(), ProxyConfig.password(), false);
     }
 
@@ -88,7 +108,10 @@ public final class ProxySettings {
     static Values load(Context context) {
         SharedPreferences p = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
         if (!p.getBoolean("saved", false)) return defaults();
-        return new Values(p.getString("host", ""), p.getInt("port", 443), p.getBoolean("tls", true),
+        // v1.1.0 stored a "tls" boolean; v1.2.0+ stores "type".
+        String type = p.contains("type") ? p.getString("type", TYPE_HTTPS)
+                : (p.getBoolean("tls", true) ? TYPE_HTTPS : TYPE_HTTP);
+        return new Values(p.getString("host", ""), p.getInt("port", 443), type,
                 p.getString("username", ""), p.getString("password", ""), p.getBoolean("direct", false));
     }
 
@@ -97,7 +120,8 @@ public final class ProxySettings {
                 .putBoolean("saved", true)
                 .putString("host", v.host)
                 .putInt("port", v.port)
-                .putBoolean("tls", v.useTls)
+                .putString("type", v.type)
+                .remove("tls")
                 .putString("username", v.username)
                 .putString("password", v.password)
                 .putBoolean("direct", v.direct)

@@ -19,9 +19,9 @@ public final class ProxyConfig {
         return 443;
     }
 
-    /** True if the connection to the proxy itself is TLS ("HTTPS proxy"). */
-    public static boolean useTls() {
-        return true;
+    /** Proxy type: "http", "https" (TLS to the proxy) or "socks5". */
+    public static String type() {
+        return "https";
     }
 
     /** Proxy username, or empty. */

@@ -3,7 +3,6 @@ package app.proxypatches.patches.reddit.proxy
 import app.morphe.patcher.extensions.InstructionExtensions.addInstruction
 import app.morphe.patcher.extensions.InstructionExtensions.addInstructions
 import app.morphe.patcher.patch.PatchException
-import app.morphe.patcher.patch.booleanOption
 import app.morphe.patcher.patch.bytecodePatch
 import app.morphe.patcher.patch.intOption
 import app.morphe.patcher.patch.resourcePatch
@@ -56,7 +55,7 @@ private val proxySettingsActivityPatch = resourcePatch {
 @Suppress("unused")
 val proxyPatch = bytecodePatch(
     name = "Proxy",
-    description = "Routes all of the app's traffic through your HTTP or HTTPS proxy, with optional " +
+    description = "Routes all of the app's traffic through your HTTP, HTTPS or SOCKS5 proxy, with optional " +
         "username and password. Change it any time in the app: long-press the app icon → Proxy " +
         "settings. Nothing goes direct, even if the proxy is down, unless you turn on \"Run without proxy\" there.",
     default = false,
@@ -80,16 +79,22 @@ val proxyPatch = bytecodePatch(
         key = "proxyPort",
         default = 443,
         title = "Proxy port",
-        description = "Starting value. For example 443 for an HTTPS proxy or 8080 for a plain HTTP proxy.",
+        description = "Starting value. For example 443 for an HTTPS proxy, 8080 for a plain HTTP proxy, " +
+            "or 1080 for SOCKS5.",
     ) { it == null || it in 1..65535 }
 
-    val useTls by booleanOption(
-        key = "useTls",
-        default = true,
-        title = "HTTPS (TLS) proxy",
-        description = "Starting value. On: the connection to the proxy itself is encrypted (an \"HTTPS proxy\", " +
-            "such as Caddy forward_proxy). Off: a plain HTTP proxy.",
-    )
+    val proxyType by stringOption(
+        key = "proxyType",
+        default = "https",
+        values = mapOf(
+            "HTTPS (encrypted connection to the proxy)" to "https",
+            "HTTP" to "http",
+            "SOCKS5" to "socks5",
+        ),
+        title = "Proxy type",
+        description = "Starting value. HTTPS: the connection to the proxy itself is encrypted " +
+            "(such as Caddy forward_proxy). HTTP: a plain HTTP proxy. SOCKS5: a SOCKS5 proxy (not encrypted).",
+    ) { it == null || it in setOf("https", "http", "socks5") }
 
     val username by stringOption(
         key = "username",
@@ -117,7 +122,7 @@ val proxyPatch = bytecodePatch(
 
         body("host", "const-string v0, \"${smaliString(host)}\"\nreturn-object v0")
         body("port", "const v0, ${proxyPort ?: 443}\nreturn v0")
-        body("useTls", "const/4 v0, ${if (useTls != false) 1 else 0}\nreturn v0")
+        body("type", "const-string v0, \"${smaliString(proxyType ?: "https")}\"\nreturn-object v0")
         body("username", "const-string v0, \"${smaliString(username.orEmpty())}\"\nreturn-object v0")
         body("password", "const-string v0, \"${smaliString(password.orEmpty())}\"\nreturn-object v0")
 

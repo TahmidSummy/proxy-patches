@@ -1,6 +1,6 @@
 # 🧦 Proxy Patches
 
-Patches that route **all** of an app's traffic through **your own HTTP or HTTPS proxy**, with optional username and password. It's built into the app, so there's no VPN app to keep running and no system proxy to switch on.
+Patches that route **all** of an app's traffic through **your own HTTP, HTTPS or SOCKS5 proxy**, with optional username and password. It's built into the app, so there's no VPN app to keep running and no system proxy to switch on.
 
 Currently supported: **Reddit**.
 
@@ -21,26 +21,31 @@ Then select the **Proxy** patch for Reddit and patch the app.
 | Setting | What to enter |
 |---|---|
 | **Run without proxy** | **Off** (default): everything goes through your proxy, and if it isn't working the app is offline. **On**: the app connects directly, without the proxy. |
+| **Proxy type** | **HTTPS**: the connection to the proxy itself is encrypted (such as Caddy `forward_proxy`). **HTTP**: a plain HTTP proxy. **SOCKS5**: a SOCKS5 proxy. |
 | **Proxy host** | Hostname or IP of your proxy, for example `proxy.example.com` |
-| **Port** | For example `443` for an HTTPS proxy or `8080` for a plain HTTP proxy |
-| **HTTPS (TLS) proxy** | **On** if the connection to the proxy itself is encrypted (an "HTTPS proxy", such as Caddy `forward_proxy`). **Off** for a plain HTTP proxy. |
+| **Port** | For example `443` for HTTPS, `8080` for HTTP, or `1080` for SOCKS5 |
 | **Username / Password** | Your proxy login, or leave both empty if it has none |
+
+> ℹ️ **SOCKS5 isn't encrypted** between your phone and the proxy. Your app traffic inside is still HTTPS, but your proxy login and the hostnames you visit can be seen on the network path. **HTTPS** proxies protect both. With SOCKS5, hostnames are sent to the proxy unresolved, so DNS happens on the proxy, not on your phone.
 
 The screen also has these buttons:
 
-- **Test connection** asks your proxy to open a tunnel and tells you whether it works, or why not (wrong login, TLS mismatch, unknown host, can't connect).
+- **Test connection** asks your proxy to open a tunnel and tells you whether it works, or why not (wrong login, TLS mismatch, unknown host, can't connect, SOCKS5 errors).
 - **Save** applies the settings to new connections straight away.
 - **Save & restart app** also drops connections that are already open.
 
 The screen works offline, so you can always fix a wrong or dead proxy.
 
-The patch options in Morphe Manager (host, port, TLS, username, password) are optional **starting values**, if you'd rather have the proxy set from the first launch.
+The patch options in Morphe Manager (proxy type, host, port, username, password) are optional **starting values**, if you'd rather have the proxy set from the first launch.
 
 > ⚠️ Your proxy login is stored in the app's private storage, or in plain text inside the APK if you set it as a patch option. Don't share your patched APK.
 
 ## 🔍 What the patch does
 
-Inside the app it runs a small local forwarder on `127.0.0.1`. Every network stack in the app is pointed at that forwarder. For each connection, the forwarder connects to your proxy (with the certificate and hostname checked, in TLS mode), adds your `Proxy-Authorization` login, and passes the traffic through.
+Inside the app it runs a small local forwarder on `127.0.0.1`. Every network stack in the app is pointed at that forwarder. For each connection, the forwarder:
+
+- **HTTP/HTTPS:** connects to your proxy (with the certificate and hostname checked, for HTTPS), adds your `Proxy-Authorization` login, and passes the traffic through.
+- **SOCKS5:** connects to your proxy, logs in (username/password auth), and asks for a tunnel to the destination hostname.
 
 For Reddit it also closes the gaps where traffic would otherwise skip the proxy:
 
@@ -55,7 +60,7 @@ There is **no fallback to a direct connection**. If your proxy isn't set, is dow
 **Tested with Reddit 2026.40.0.** No TCP or QUIC traffic went anywhere except the proxy in any of these:
 
 - **Android 17 phone:** scrolling, video, Wi-Fi ⇄ mobile data, background, proxy unreachable.
-- **Android 15 emulator:** first launch with no proxy set, in-app settings changes, and switching Run without proxy off and on.
+- **Android 15 emulator:** first launch with no proxy set, in-app settings changes, switching Run without proxy off and on, and a real SOCKS5 proxy.
 
 The only other traffic is the phone's DNS lookup of the proxy's own hostname.
 
@@ -63,7 +68,8 @@ The only other traffic is the phone's DNS lookup of the proxy's own hostname.
 
 - **YouTube links** inside Reddit open the YouTube app, which isn't covered.
 - **Push notifications** come through Google Play Services, outside the app.
-- **Only HTTP CONNECT proxies** (HTTP or HTTPS) are supported, not SOCKS.
+- **SOCKS5 is TCP only** (CONNECT). That's all the app needs, because QUIC/UDP is off whenever a proxy is set.
+- **SOCKS5 servers without IPv6** can answer "host unreachable" for sites that have IPv6 addresses. The patch retries those twice. The real fix is making the server prefer IPv4.
 
 ## 🩹 Patches list
 

@@ -262,13 +262,17 @@ public final class ProxyForwarder {
 
             if (settings.direct) {
                 // "Run without proxy": act as a plain local proxy that connects directly.
-                upstream = openDirect(header, isConnect, client.getOutputStream());
+                upstream = openTarget(header, isConnect, client.getOutputStream(), ProxyForwarder::connectDirect);
+                if (upstream == null) return;
+            } else if (!settings.isConfigured()) {
+                ProxySettings.showNotConfiguredHint();
+                return; // fail closed
+            } else if (settings.isSocks()) {
+                // SOCKS5 proxy: the forwarder speaks SOCKS5 upstream, the app still sees an HTTP proxy.
+                upstream = openTarget(header, isConnect, client.getOutputStream(),
+                        (host, port) -> Socks5.connect(settings, host, port));
                 if (upstream == null) return;
             } else {
-                if (!settings.isConfigured()) {
-                    ProxySettings.showNotConfiguredHint();
-                    return; // fail closed
-                }
                 byte[] rewritten = rewrite(header, isConnect, settings.authBase64())
                         .getBytes(StandardCharsets.ISO_8859_1);
                 upstream = openUpstream(settings);
@@ -290,12 +294,31 @@ public final class ProxyForwarder {
         }
     }
 
+    /** Opens a TCP connection to the destination host:port (directly, or through SOCKS5). */
+    interface Connector {
+        Socket connect(String host, int port) throws IOException;
+    }
+
+    static Socket connectDirect(String host, int port) throws IOException {
+        Socket s = new Socket();
+        s.setTcpNoDelay(true);
+        try {
+            s.connect(new InetSocketAddress(host, port), 15000);
+        } catch (IOException e) {
+            closeQuietly(s);
+            throw e;
+        }
+        return s;
+    }
+
     /**
-     * "Run without proxy" mode: handles the client's proxy request by connecting straight to the
-     * destination. CONNECT gets a "200 Connection established"; plain-HTTP requests are rewritten
-     * from absolute-form to origin-form and forwarded. Returns null if the request is unusable.
+     * Handles the client's proxy request ourselves: connects to the destination using
+     * {@code connector} (directly for "Run without proxy", or through SOCKS5). CONNECT gets a
+     * "200 Connection established"; plain-HTTP requests are rewritten from absolute-form to
+     * origin-form and forwarded. Returns null if the request is unusable.
      */
-    static Socket openDirect(String header, boolean isConnect, OutputStream toClient) throws IOException {
+    static Socket openTarget(String header, boolean isConnect, OutputStream toClient, Connector connector)
+            throws IOException {
         String[] lines = header.split("\r\n");
         String[] requestLine = lines[0].split(" ");
         if (requestLine.length < 3) return null;
@@ -319,17 +342,15 @@ public final class ProxyForwarder {
         }
         if (host.startsWith("[") && host.endsWith("]")) host = host.substring(1, host.length() - 1);
 
-        Socket s = new Socket();
-        s.setTcpNoDelay(true);
+        Socket s;
         try {
-            s.connect(new InetSocketAddress(host, port), 15000);
+            s = connector.connect(host, port);
         } catch (IOException e) {
             if (isConnect) {
                 toClient.write("HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\n\r\n"
                         .getBytes(StandardCharsets.ISO_8859_1));
                 toClient.flush();
             }
-            closeQuietly(s);
             throw e;
         }
 
@@ -360,7 +381,7 @@ public final class ProxyForwarder {
         Socket raw = new Socket();
         raw.setTcpNoDelay(true);
         raw.connect(new InetSocketAddress(host, port), 15000);
-        if (!v.useTls) return raw;
+        if (!v.useTls()) return raw;
 
         SSLSocket s = (SSLSocket) ((SSLSocketFactory) SSLSocketFactory.getDefault())
                 .createSocket(raw, host, port, true);
@@ -396,6 +417,20 @@ public final class ProxyForwarder {
     static String testProxy(ProxySettings.Values v) {
         long t0 = System.currentTimeMillis();
         Socket s = null;
+        if (v.isSocks()) {
+            try {
+                s = Socks5.connect(v, "www.google.com", 443);
+                return "✓ Working (" + (System.currentTimeMillis() - t0) + " ms)\nSOCKS5 tunnel to www.google.com:443 opened";
+            } catch (Socks5.SocksException e) {
+                return "✗ " + e.getMessage();
+            } catch (java.net.UnknownHostException e) {
+                return "✗ Couldn't find that host name.\n" + e;
+            } catch (Throwable e) {
+                return "✗ Couldn't connect to the SOCKS5 proxy.\n" + e;
+            } finally {
+                closeQuietly(s);
+            }
+        }
         try {
             s = openUpstream(v);
             s.setSoTimeout(15000);
@@ -416,7 +451,7 @@ public final class ProxyForwarder {
             return "✗ The proxy refused the tunnel. Check the login (some proxies hide " +
                     "login errors behind a redirect or 404).\n" + statusLine;
         } catch (javax.net.ssl.SSLException e) {
-            return "✗ TLS failed. If this is a plain HTTP proxy, turn off \"HTTPS (TLS) proxy\".\n" + e;
+            return "✗ TLS failed. If this is a plain HTTP proxy, set the proxy type to HTTP.\n" + e;
         } catch (java.net.UnknownHostException e) {
             return "✗ Couldn't find that host name.\n" + e;
         } catch (Throwable e) {

@@ -12,6 +12,8 @@ import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.LinearLayout;
+import android.widget.RadioButton;
+import android.widget.RadioGroup;
 import android.widget.ScrollView;
 import android.widget.Switch;
 import android.widget.TextView;
@@ -25,8 +27,25 @@ import android.widget.Toast;
 @SuppressWarnings("deprecation")
 public class ProxySettingsActivity extends Activity {
     private EditText host, port, username, password;
-    private Switch tls, direct;
+    private Switch direct;
+    private RadioGroup typeGroup;
+    private int radioHttps, radioHttp, radioSocks;
     private TextView status;
+
+    private int radio(RadioGroup group, String label) {
+        RadioButton b = new RadioButton(this);
+        b.setId(android.view.View.generateViewId());
+        b.setText(label);
+        group.addView(b);
+        return b.getId();
+    }
+
+    private String selectedType() {
+        int id = typeGroup.getCheckedRadioButtonId();
+        if (id == radioSocks) return ProxySettings.TYPE_SOCKS5;
+        if (id == radioHttp) return ProxySettings.TYPE_HTTP;
+        return ProxySettings.TYPE_HTTPS;
+    }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -52,16 +71,20 @@ public class ProxySettingsActivity extends Activity {
         root.addView(direct, matchWrap());
         root.addView(text("On: the app connects directly, without the proxy (your real IP is used). " +
                 "Off: everything goes through the proxy below.", 12));
+        TextView typeLabel = text("Proxy type", 14);
+        typeLabel.setPadding(0, dp(16), 0, 0);
+        typeLabel.setTypeface(Typeface.DEFAULT_BOLD);
+        root.addView(typeLabel, matchWrap());
+        typeGroup = new RadioGroup(this);
+        typeGroup.setOrientation(RadioGroup.VERTICAL);
+        radioHttps = radio(typeGroup, "HTTPS: encrypted connection to the proxy");
+        radioHttp = radio(typeGroup, "HTTP: plain connection to the proxy");
+        radioSocks = radio(typeGroup, "SOCKS5 (not encrypted)");
+        typeGroup.check(v.isSocks() ? radioSocks : v.useTls() ? radioHttps : radioHttp);
+        root.addView(typeGroup, matchWrap());
+
         host = field(root, "Proxy host", "proxy.example.com", v.host, InputType.TYPE_TEXT_VARIATION_URI);
         port = field(root, "Port", "443", v.port > 0 ? String.valueOf(v.port) : "", InputType.TYPE_CLASS_NUMBER);
-
-        tls = new Switch(this);
-        tls.setText("HTTPS (TLS) proxy");
-        tls.setChecked(v.useTls);
-        tls.setPadding(0, dp(16), 0, 0);
-        root.addView(tls, matchWrap());
-        root.addView(text("On: the connection to the proxy is encrypted (an \"HTTPS proxy\"). " +
-                "Off: a plain HTTP proxy.", 12));
 
         username = field(root, "Username (optional)", "", v.username, InputType.TYPE_CLASS_TEXT);
         password = field(root, "Password (optional)", "", v.password,
@@ -135,7 +158,7 @@ public class ProxySettingsActivity extends Activity {
                 return null;
             }
         }
-        return new ProxySettings.Values(h, p, tls.isChecked(),
+        return new ProxySettings.Values(h, p, selectedType(),
                 username.getText().toString(), password.getText().toString(), runDirect);
     }
 
