@@ -12,16 +12,31 @@ Click the button below, or add this repo URL as a patch source in Morphe Manager
   <img src=".github/assets/add-to-morphe.svg" alt="Add to Morphe" height="48">
 </a>
 
-Then select the **Proxy** patch for Reddit and fill in its options:
+Then select the **Proxy** patch for Reddit and patch the app.
 
-| Option | What to enter |
+### ⚙️ Setting your proxy (no repatching needed)
+
+**Long-press the Reddit icon → Proxy settings.** Fill in:
+
+| Setting | What to enter |
 |---|---|
+| **Run without proxy** | **Off** (default): everything goes through your proxy, and if it isn't working the app is offline. **On**: the app connects directly, without the proxy. |
 | **Proxy host** | Hostname or IP of your proxy, for example `proxy.example.com` |
-| **Proxy port** | For example `443` for an HTTPS proxy or `8080` for a plain HTTP proxy |
+| **Port** | For example `443` for an HTTPS proxy or `8080` for a plain HTTP proxy |
 | **HTTPS (TLS) proxy** | **On** if the connection to the proxy itself is encrypted (an "HTTPS proxy", such as Caddy `forward_proxy`). **Off** for a plain HTTP proxy. |
 | **Username / Password** | Your proxy login, or leave both empty if it has none |
 
-> ⚠️ The username and password are stored in plain text inside the patched app. Don't share your patched APK.
+The screen also has these buttons:
+
+- **Test connection** asks your proxy to open a tunnel and tells you whether it works, or why not (wrong login, TLS mismatch, unknown host, can't connect).
+- **Save** applies the settings to new connections straight away.
+- **Save & restart app** also drops connections that are already open.
+
+The screen works offline, so you can always fix a wrong or dead proxy.
+
+The patch options in Morphe Manager (host, port, TLS, username, password) are optional **starting values**, if you'd rather have the proxy set from the first launch.
+
+> ⚠️ Your proxy login is stored in the app's private storage, or in plain text inside the APK if you set it as a patch option. Don't share your patched APK.
 
 ## 🔍 What the patch does
 
@@ -33,10 +48,16 @@ For Reddit it also closes the gaps where traffic would otherwise skip the proxy:
 - **Cronet's own DNS** (built-in resolver and stale/persisted host cache) is turned off.
 - **Google Play Services' Cronet**, used by reCAPTCHA, is disabled, so reCAPTCHA uses the app's own patched Cronet.
 - **WebView** gets a proxy override.
+- **Android's built-in `HttpURLConnection`** (used by SDKs such as AppsFlyer and Firebase) quietly tries a direct connection when the proxy fails. Every `http(s)` URL is opened with the proxy passed explicitly, which turns that fallback off.
 
-There is **no fallback to a direct connection**. If your proxy is down, the app has no network rather than connecting directly.
+There is **no fallback to a direct connection**. If your proxy isn't set, is down, or rejects the login, the app has no network rather than connecting directly. The only exception is when you turn on **Run without proxy** yourself.
 
-Tested with Reddit 2026.40.0 on Android 17. While scrolling, playing video, switching Wi-Fi to mobile data, in the background, and with the proxy unreachable, no TCP or QUIC traffic went anywhere except the proxy. The only other traffic is the phone's DNS lookup of the proxy's own hostname.
+**Tested with Reddit 2026.40.0.** No TCP or QUIC traffic went anywhere except the proxy in any of these:
+
+- **Android 17 phone:** scrolling, video, Wi-Fi ⇄ mobile data, background, proxy unreachable.
+- **Android 15 emulator:** first launch with no proxy set, in-app settings changes, and switching Run without proxy off and on.
+
+The only other traffic is the phone's DNS lookup of the proxy's own hostname.
 
 ### Limitations
 

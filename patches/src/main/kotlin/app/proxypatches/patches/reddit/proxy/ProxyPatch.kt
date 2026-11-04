@@ -6,90 +6,125 @@ import app.morphe.patcher.patch.PatchException
 import app.morphe.patcher.patch.booleanOption
 import app.morphe.patcher.patch.bytecodePatch
 import app.morphe.patcher.patch.intOption
+import app.morphe.patcher.patch.resourcePatch
 import app.morphe.patcher.patch.stringOption
 import app.proxypatches.patches.shared.Constants.COMPATIBILITY_REDDIT
-import java.util.Base64
+import org.w3c.dom.Element
 
+private const val EXTENSION_PACKAGE = "app.proxypatches.extension"
 private const val EXTENSION_FORWARDER = "Lapp/proxypatches/extension/ProxyForwarder;"
 private const val EXTENSION_CONFIG = "Lapp/proxypatches/extension/ProxyConfig;"
+private const val SETTINGS_ACTIVITY = "$EXTENSION_PACKAGE.ProxySettingsActivity"
 
-/** Hostname, IPv4 or bracket-less IPv6. Restricted so it can be embedded in smali safely. */
+/** Hostname, IPv4 or bracket-less IPv6. */
 private val HOST_REGEX = Regex("^[A-Za-z0-9.:\\-]{1,253}$")
+
+/** Escapes a value for a smali string literal. */
+private fun smaliString(s: String) = buildString {
+    for (c in s) when {
+        c == '\\' -> append("\\\\")
+        c == '"' -> append("\\\"")
+        c.code in 0x20..0x7E -> append(c)
+        else -> append("\\u%04x".format(c.code))
+    }
+}
+
+/** Registers the "Proxy settings" screen in the manifest. */
+private val proxySettingsActivityPatch = resourcePatch {
+    execute {
+        document("AndroidManifest.xml").use { doc ->
+            val application = doc.getElementsByTagName("application").item(0) as Element
+            val activities = application.getElementsByTagName("activity")
+            for (i in 0 until activities.length) {
+                if ((activities.item(i) as Element).getAttribute("android:name") == SETTINGS_ACTIVITY) return@execute
+            }
+            application.appendChild(
+                doc.createElement("activity").apply {
+                    setAttribute("android:name", SETTINGS_ACTIVITY)
+                    setAttribute("android:label", "Proxy settings")
+                    setAttribute("android:exported", "false")
+                    setAttribute("android:theme", "@android:style/Theme.DeviceDefault.DayNight")
+                    // Its own task, so opening it from the launcher shortcut doesn't disturb the app.
+                    setAttribute("android:taskAffinity", "$EXTENSION_PACKAGE.settings")
+                    setAttribute("android:windowSoftInputMode", "adjustResize")
+                },
+            )
+        }
+    }
+}
 
 @Suppress("unused")
 val proxyPatch = bytecodePatch(
     name = "Proxy",
-    description = "Routes all of the app's traffic through your HTTP or HTTPS proxy, " +
-        "with optional username and password. Nothing goes direct, even if the proxy is down.",
+    description = "Routes all of the app's traffic through your HTTP or HTTPS proxy, with optional " +
+        "username and password. Change it any time in the app: long-press the app icon → Proxy " +
+        "settings. Nothing goes direct, even if the proxy is down, unless you turn on \"Run without proxy\" there.",
     default = false,
 ) {
     compatibleWith(COMPATIBILITY_REDDIT)
+
+    dependsOn(proxySettingsActivityPatch)
 
     extendWith("extensions/proxy.mpe")
 
     val proxyHost by stringOption(
         key = "proxyHost",
-        default = null,
-        title = "Proxy host",
-        description = "Hostname or IP address of the proxy, for example proxy.example.com.",
-        required = true,
-    ) { it != null && HOST_REGEX.matches(it.trim()) }
+        default = "",
+        title = "Proxy host (optional)",
+        description = "Starting value. Hostname or IP address of the proxy, for example proxy.example.com. " +
+            "You can also leave this empty and set it in the app (long-press the app icon → Proxy settings). " +
+            "Until a proxy is set, the app has no internet.",
+    ) { it.isNullOrBlank() || HOST_REGEX.matches(it.trim()) }
 
     val proxyPort by intOption(
         key = "proxyPort",
         default = 443,
         title = "Proxy port",
-        description = "Port of the proxy, for example 443 for an HTTPS proxy or 8080 for a plain HTTP proxy.",
-        required = true,
-    ) { it != null && it in 1..65535 }
+        description = "Starting value. For example 443 for an HTTPS proxy or 8080 for a plain HTTP proxy.",
+    ) { it == null || it in 1..65535 }
 
     val useTls by booleanOption(
         key = "useTls",
         default = true,
         title = "HTTPS (TLS) proxy",
-        description = "On: the connection to the proxy itself is encrypted (an \"HTTPS proxy\", " +
+        description = "Starting value. On: the connection to the proxy itself is encrypted (an \"HTTPS proxy\", " +
             "such as Caddy forward_proxy). Off: a plain HTTP proxy.",
-        required = true,
     )
 
     val username by stringOption(
         key = "username",
         default = "",
-        title = "Username",
-        description = "Proxy username. Leave empty if the proxy has no login. " +
+        title = "Username (optional)",
+        description = "Starting value. Leave empty if the proxy has no login. " +
             "Stored in plain text inside the patched app, so don't share the patched APK.",
     )
 
     val password by stringOption(
         key = "password",
         default = "",
-        title = "Password",
-        description = "Proxy password. Leave empty if the proxy has no login.",
+        title = "Password (optional)",
+        description = "Starting value. Leave empty if the proxy has no login.",
     )
 
     execute {
-        // ---- 1. Fill in the user's settings -------------------------------------------------
-        val host = proxyHost!!.trim()
-        if (!HOST_REGEX.matches(host)) throw PatchException("Invalid proxy host: $host")
-        val port = proxyPort!!
-        val user = username.orEmpty()
-        val pass = password.orEmpty()
-        val auth = if (user.isEmpty() && pass.isEmpty()) "" else
-            Base64.getEncoder().encodeToString("$user:$pass".toByteArray(Charsets.UTF_8))
+        // ---- 1. Starting values from the patch options ------------------------------------
+        val host = proxyHost.orEmpty().trim()
+        if (host.isNotEmpty() && !HOST_REGEX.matches(host)) throw PatchException("Invalid proxy host: $host")
 
         val config = mutableClassDefBy(EXTENSION_CONFIG)
         fun body(name: String, smali: String) =
             config.methods.first { it.name == name }.addInstructions(0, smali)
 
-        body("host", "const-string v0, \"$host\"\nreturn-object v0")
-        body("port", "const v0, $port\nreturn v0")
+        body("host", "const-string v0, \"${smaliString(host)}\"\nreturn-object v0")
+        body("port", "const v0, ${proxyPort ?: 443}\nreturn v0")
         body("useTls", "const/4 v0, ${if (useTls != false) 1 else 0}\nreturn v0")
-        body("authBase64", "const-string v0, \"$auth\"\nreturn-object v0")
+        body("username", "const-string v0, \"${smaliString(username.orEmpty())}\"\nreturn-object v0")
+        body("password", "const-string v0, \"${smaliString(password.orEmpty())}\"\nreturn-object v0")
 
         // ---- 2. Start the forwarder before anything else in the app ---------------------------
         ApplicationAttachBaseContextFingerprint.method.addInstruction(
             0,
-            "invoke-static {}, $EXTENSION_FORWARDER->start()V",
+            "invoke-static { p1 }, $EXTENSION_FORWARDER->start(Landroid/content/Context;)V",
         )
 
         // ---- 3. Cronet: re-read the (Java) proxy properties instead of Android's system proxy --

@@ -22,6 +22,9 @@ import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.SocketAddress;
 import java.net.URI;
+import java.net.URL;
+import java.net.URLConnection;
+import java.net.URLStreamHandler;
 import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.List;
@@ -53,24 +56,31 @@ public final class ProxyForwarder {
 
     private ProxyForwarder() {}
 
-    /** Called by the patch at the very start of Application.attachBaseContext. Never throws. */
-    public static synchronized void start() {
+    /**
+     * Called by the patch at the very start of Application.attachBaseContext. Never throws.
+     * Starts even when no proxy is set yet: the app then stays offline (fail closed) until the
+     * user sets one in Proxy settings.
+     */
+    public static synchronized void start(android.content.Context context) {
         if (started) return;
         started = true;
         try {
-            if (ProxyConfig.host().isEmpty() || ProxyConfig.port() <= 0) {
-                Log.e(TAG, "No proxy configured; not starting");
-                return;
-            }
+            ProxySettings.init(context);
+            daemon("proxy-shortcut", () -> ProxySettings.publishShortcut(context));
             final ServerSocket server = new ServerSocket(0, 128, InetAddress.getByName("127.0.0.1"));
             localPort = server.getLocalPort();
-            selector = new LocalSelector(new Proxy(Proxy.Type.HTTP, new InetSocketAddress("127.0.0.1", localPort)));
+            localProxy = new Proxy(Proxy.Type.HTTP, new InetSocketAddress("127.0.0.1", localPort));
+            selector = new LocalSelector(localProxy);
             apply();
+            installUrlHandlers();
             daemon("proxy-accept", () -> acceptLoop(server));
             daemon("proxy-watch", () -> {
+                int tick = 0;
                 while (true) {
                     try { Thread.sleep(1500); } catch (InterruptedException e) { return; }
                     try { apply(); } catch (Throwable ignored) {}
+                    // The app may replace all dynamic shortcuts (wiping ours); put it back.
+                    if (++tick % 10 == 0) ProxySettings.ensureShortcut(context);
                 }
             });
             scheduleWebViewOverride();
@@ -80,6 +90,62 @@ public final class ProxyForwarder {
     }
 
     public static int localPort() { return localPort; }
+
+    // ---- HttpURLConnection: no direct fallback --------------------------------------------
+    // Android's HttpURLConnection (built-in OkHttp 2.x) appends a DIRECT route after the
+    // ProxySelector's proxies when no explicit proxy was given, so when our proxy fails (not set,
+    // down, wrong login) SDKs using it (e.g. AppsFlyer, Firebase logging) silently go direct.
+    // An explicitly passed proxy has no such fallback, so every http(s) URL is opened with our
+    // proxy passed explicitly - even if the caller asked for Proxy.NO_PROXY.
+
+    private static volatile Proxy localProxy;
+
+    private static void installUrlHandlers() {
+        try {
+            // URLs created before the factory is installed keep Android's default handlers;
+            // new URL(template, spec) reuses the template's handler for the same protocol.
+            final URL httpTemplate = new URL("http://proxy-patch.invalid/");
+            final URL httpsTemplate = new URL("https://proxy-patch.invalid/");
+            URL.setURLStreamHandlerFactory(protocol -> {
+                if ("http".equalsIgnoreCase(protocol)) return new ForcedProxyHandler(httpTemplate, 80);
+                if ("https".equalsIgnoreCase(protocol)) return new ForcedProxyHandler(httpsTemplate, 443);
+                return null; // everything else: default handler
+            });
+        } catch (Throwable t) {
+            Log.e(TAG, "URL handler install failed; HttpURLConnection may fall back to direct", t);
+        }
+    }
+
+    static final class ForcedProxyHandler extends URLStreamHandler {
+        private final URL template;
+        private final int defaultPort;
+
+        ForcedProxyHandler(URL template, int defaultPort) {
+            this.template = template;
+            this.defaultPort = defaultPort;
+        }
+
+        @Override
+        protected URLConnection openConnection(URL u) throws IOException {
+            return openConnection(u, null);
+        }
+
+        @Override
+        protected URLConnection openConnection(URL u, Proxy requested) throws IOException {
+            URL real = new URL(template, u.toExternalForm());
+            String host = u.getHost() == null ? "" : u.getHost().toLowerCase();
+            boolean loopback = host.equals("localhost") || host.startsWith("127.")
+                    || host.equals("::1") || host.equals("[::1]");
+            Proxy p = localProxy;
+            if (loopback || p == null) return real.openConnection(Proxy.NO_PROXY);
+            return real.openConnection(p);
+        }
+
+        @Override
+        protected int getDefaultPort() {
+            return defaultPort;
+        }
+    }
 
     /** Points Java networking (and Cronet, via the patched ProxyChangeListener) at the forwarder. */
     static void apply() {
@@ -189,14 +255,27 @@ public final class ProxyForwarder {
             byte[] head = readHeader(client.getInputStream());
             if (head == null) return;
 
+            // Snapshot per connection: saved changes apply to the next connection.
+            ProxySettings.Values settings = ProxySettings.get();
             String header = new String(head, StandardCharsets.ISO_8859_1);
             boolean isConnect = header.regionMatches(true, 0, "CONNECT ", 0, 8);
-            byte[] rewritten = rewrite(header, isConnect).getBytes(StandardCharsets.ISO_8859_1);
 
-            upstream = openUpstream();
-            OutputStream uout = upstream.getOutputStream();
-            uout.write(rewritten);
-            uout.flush();
+            if (settings.direct) {
+                // "Run without proxy": act as a plain local proxy that connects directly.
+                upstream = openDirect(header, isConnect, client.getOutputStream());
+                if (upstream == null) return;
+            } else {
+                if (!settings.isConfigured()) {
+                    ProxySettings.showNotConfiguredHint();
+                    return; // fail closed
+                }
+                byte[] rewritten = rewrite(header, isConnect, settings.authBase64())
+                        .getBytes(StandardCharsets.ISO_8859_1);
+                upstream = openUpstream(settings);
+                OutputStream uout = upstream.getOutputStream();
+                uout.write(rewritten);
+                uout.flush();
+            }
 
             final Socket c = client;
             final Socket u = upstream;
@@ -211,13 +290,77 @@ public final class ProxyForwarder {
         }
     }
 
-    static Socket openUpstream() throws IOException {
-        String host = ProxyConfig.host();
-        int port = ProxyConfig.port();
+    /**
+     * "Run without proxy" mode: handles the client's proxy request by connecting straight to the
+     * destination. CONNECT gets a "200 Connection established"; plain-HTTP requests are rewritten
+     * from absolute-form to origin-form and forwarded. Returns null if the request is unusable.
+     */
+    static Socket openDirect(String header, boolean isConnect, OutputStream toClient) throws IOException {
+        String[] lines = header.split("\r\n");
+        String[] requestLine = lines[0].split(" ");
+        if (requestLine.length < 3) return null;
+        String method = requestLine[0], target = requestLine[1], version = requestLine[2];
+
+        String host;
+        int port;
+        String originTarget = null;
+        if (isConnect) {
+            int colon = target.lastIndexOf(':');
+            if (colon <= 0) return null;
+            host = target.substring(0, colon);
+            port = Integer.parseInt(target.substring(colon + 1));
+        } else {
+            URI uri = URI.create(target);
+            if (uri.getHost() == null) return null;
+            host = uri.getHost();
+            port = uri.getPort() > 0 ? uri.getPort() : 80;
+            String path = uri.getRawPath() == null || uri.getRawPath().isEmpty() ? "/" : uri.getRawPath();
+            originTarget = uri.getRawQuery() == null ? path : path + "?" + uri.getRawQuery();
+        }
+        if (host.startsWith("[") && host.endsWith("]")) host = host.substring(1, host.length() - 1);
+
+        Socket s = new Socket();
+        s.setTcpNoDelay(true);
+        try {
+            s.connect(new InetSocketAddress(host, port), 15000);
+        } catch (IOException e) {
+            if (isConnect) {
+                toClient.write("HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\n\r\n"
+                        .getBytes(StandardCharsets.ISO_8859_1));
+                toClient.flush();
+            }
+            closeQuietly(s);
+            throw e;
+        }
+
+        if (isConnect) {
+            toClient.write("HTTP/1.1 200 Connection established\r\n\r\n".getBytes(StandardCharsets.ISO_8859_1));
+            toClient.flush();
+        } else {
+            StringBuilder sb = new StringBuilder(header.length());
+            sb.append(method).append(' ').append(originTarget).append(' ').append(version).append("\r\n");
+            for (int i = 1; i < lines.length; i++) {
+                String line = lines[i];
+                if (line.isEmpty()) continue;
+                String lower = line.toLowerCase();
+                if (lower.startsWith("proxy-") || lower.startsWith("connection:")) continue;
+                sb.append(line).append("\r\n");
+            }
+            sb.append("Connection: close\r\n\r\n");
+            OutputStream out = s.getOutputStream();
+            out.write(sb.toString().getBytes(StandardCharsets.ISO_8859_1));
+            out.flush();
+        }
+        return s;
+    }
+
+    static Socket openUpstream(ProxySettings.Values v) throws IOException {
+        String host = v.host;
+        int port = v.port;
         Socket raw = new Socket();
         raw.setTcpNoDelay(true);
         raw.connect(new InetSocketAddress(host, port), 15000);
-        if (!ProxyConfig.useTls()) return raw;
+        if (!v.useTls) return raw;
 
         SSLSocket s = (SSLSocket) ((SSLSocketFactory) SSLSocketFactory.getDefault())
                 .createSocket(raw, host, port, true);
@@ -246,8 +389,44 @@ public final class ProxyForwarder {
         return null;
     }
 
-    static String rewrite(String header, boolean isConnect) {
-        String auth = ProxyConfig.authBase64();
+    /**
+     * Used by the settings screen: connects to the proxy with the given settings and asks it to
+     * open a tunnel to www.google.com:443. Returns a human-readable result.
+     */
+    static String testProxy(ProxySettings.Values v) {
+        long t0 = System.currentTimeMillis();
+        Socket s = null;
+        try {
+            s = openUpstream(v);
+            s.setSoTimeout(15000);
+            String req = "CONNECT www.google.com:443 HTTP/1.1\r\nHost: www.google.com:443\r\n\r\n";
+            OutputStream out = s.getOutputStream();
+            out.write(rewrite(req, true, v.authBase64()).getBytes(StandardCharsets.ISO_8859_1));
+            out.flush();
+            byte[] head = readHeader(s.getInputStream());
+            String statusLine = head == null ? "(no response)"
+                    : new String(head, StandardCharsets.ISO_8859_1).split("\r\n", 2)[0];
+            long ms = System.currentTimeMillis() - t0;
+            if (statusLine.matches("HTTP/1\\.[01] 200.*")) {
+                return "✓ Working (" + ms + " ms)\n" + statusLine;
+            }
+            if (statusLine.contains(" 407")) {
+                return "✗ The proxy asked for a login: check the username and password.\n" + statusLine;
+            }
+            return "✗ The proxy refused the tunnel. Check the login (some proxies hide " +
+                    "login errors behind a redirect or 404).\n" + statusLine;
+        } catch (javax.net.ssl.SSLException e) {
+            return "✗ TLS failed. If this is a plain HTTP proxy, turn off \"HTTPS (TLS) proxy\".\n" + e;
+        } catch (java.net.UnknownHostException e) {
+            return "✗ Couldn't find that host name.\n" + e;
+        } catch (Throwable e) {
+            return "✗ Couldn't connect to the proxy.\n" + e;
+        } finally {
+            closeQuietly(s);
+        }
+    }
+
+    static String rewrite(String header, boolean isConnect, String auth) {
         String[] lines = header.split("\r\n");
         StringBuilder sb = new StringBuilder(header.length() + 128);
         sb.append(lines[0]).append("\r\n");
