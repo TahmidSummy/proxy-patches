@@ -91,8 +91,8 @@ public final class ProxySettings {
     private ProxySettings() {}
 
     static Values defaults() {
-        return new Values(ProxyConfig.host(), ProxyConfig.port(), ProxyConfig.type(),
-                ProxyConfig.username(), ProxyConfig.password(), false);
+        // Starting values have no login: it's only ever entered in the app.
+        return new Values(ProxyConfig.host(), ProxyConfig.port(), ProxyConfig.type(), "", "", false);
     }
 
     /** Loads saved settings. Called once at app start. */

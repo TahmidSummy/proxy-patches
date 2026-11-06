@@ -44,9 +44,9 @@ The screen works offline, so you can always fix a wrong or dead proxy. It also *
 
 It appears at most once a minute, only while the app is open, and only after a few failures in a row. It doesn't appear when your phone itself has no internet, so a dead Wi-Fi isn't blamed on the proxy.
 
-The patch options in Morphe Manager (proxy type, host, port, username, password) are optional **starting values**, if you'd rather have the proxy set from the first launch.
+The patch options in Morphe Manager (proxy type, host, port) are optional **starting values**, if you'd rather have the proxy pre-filled from the first launch.
 
-> ⚠️ Your proxy login is stored in the app's private storage. A login set as a **patch option** is stored in plain text inside the APK, so for a private login, enter it in the app instead. Don't share your patched APK.
+> 🔒 **Your username and password are only ever entered in the app's Proxy settings.** There's deliberately no patch option for them. Patch options are stored as plain text inside the APK, and installed APKs can be read by any app on the phone. The app's own storage is private to the app (Android's sandbox).
 
 ## 🔍 What the patch does
 
@@ -59,6 +59,7 @@ For Reddit it also closes the gaps where traffic would otherwise skip the proxy:
 
 - **Cronet** (Chromium networking, Reddit's main stack) would switch to direct connections and QUIC whenever Android broadcasts a proxy change. It's patched to keep using the proxy.
 - **Cronet's own DNS** (built-in resolver and stale/persisted host cache) is turned off.
+- **Reddit's startup DNS warm-up** (`DnsLookupInitializer`) is turned off. On a fresh install it looked up Reddit's API hosts with your phone's DNS.
 - **Google Play Services' Cronet**, used by reCAPTCHA, is disabled, so reCAPTCHA uses the app's own patched Cronet.
 - **WebView** gets a proxy override.
 - **Android's built-in `HttpURLConnection`** (used by SDKs such as AppsFlyer and Firebase) quietly tries a direct connection when the proxy fails. Every `http(s)` URL is opened with the proxy passed explicitly, which turns that fallback off.

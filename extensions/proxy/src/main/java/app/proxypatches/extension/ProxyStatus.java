@@ -18,13 +18,20 @@ import javax.net.ssl.SSLException;
  * Tells the user when the proxy (not the website, not the phone's connection) is the reason the
  * app can't load anything. Fed by the forwarder with the real outcome of each proxy connection.
  * <p>
- * Shows a message only after {@link #FAILURES_BEFORE_MESSAGE} proxy failures in a row with no
- * success in between, at most once per {@link #MIN_INTERVAL_MS}, only while the app is in the
- * foreground, and only if Android says the phone itself has working internet.
+ * Shows a message only after {@link #FAILURES_BEFORE_MESSAGE} proxy failures in a row, spanning at
+ * least {@link #MIN_PROBLEM_DURATION_MS}, with no success in between; at most once per
+ * {@link #MIN_INTERVAL_MS}; only while the app is in the foreground; and only if Android says the
+ * phone itself has working internet.
  */
 final class ProxyStatus {
     private static final String TAG = "ProxyPatch";
     static final int FAILURES_BEFORE_MESSAGE = 3;
+    /**
+     * The failures must also span this long with no success in between. The app opens many
+     * connections in parallel, so one momentary blip (e.g. a DNS hiccup at startup) can produce
+     * several failures within milliseconds; that alone shouldn't trigger a message.
+     */
+    static final long MIN_PROBLEM_DURATION_MS = 8_000;
     static final long MIN_INTERVAL_MS = 60_000;
 
     enum Problem {
@@ -45,6 +52,7 @@ final class ProxyStatus {
     }
 
     private static int consecutiveFailures;
+    private static long firstFailureAt;
     private static long lastShownAt;
 
     private ProxyStatus() {}
@@ -57,9 +65,11 @@ final class ProxyStatus {
     /** A connection failed because of the proxy itself. */
     static void failed(Problem problem, String detail) {
         synchronized (ProxyStatus.class) {
+            long now = System.currentTimeMillis();
+            if (consecutiveFailures == 0) firstFailureAt = now;
             consecutiveFailures++;
             if (consecutiveFailures < FAILURES_BEFORE_MESSAGE) return;
-            long now = System.currentTimeMillis();
+            if (now - firstFailureAt < MIN_PROBLEM_DURATION_MS) return; // just a momentary blip so far
             if (now - lastShownAt < MIN_INTERVAL_MS) return;
             Context ctx = ProxySettings.context();
             if (ctx == null) return;
