@@ -1,3 +1,9 @@
+## [1.3.0](https://github.com/TahmidSummy/proxy-patches/compare/v1.2.0...v1.3.0) (2026-11-06)
+
+### ✨ New Features
+
+* Write-only saved password, screenshot blocking, and proxy-down messages ([f555ddc](https://github.com/TahmidSummy/proxy-patches/commit/f555ddc798f478128ada4db359d934f50d191aa6))
+
 ## [1.2.0](https://github.com/TahmidSummy/proxy-patches/compare/v1.1.0...v1.2.0) (2026-11-04)
 
 ### ✨ New Features
