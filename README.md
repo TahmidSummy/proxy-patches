@@ -24,7 +24,7 @@ Then select the **Proxy** patch for Reddit and patch the app.
 | **Proxy type** | **HTTPS**: the connection to the proxy itself is encrypted (such as Caddy `forward_proxy`). **HTTP**: a plain HTTP proxy. **SOCKS5**: a SOCKS5 proxy. |
 | **Proxy host** | Hostname or IP of your proxy, for example `proxy.example.com` |
 | **Port** | For example `443` for HTTPS, `8080` for HTTP, or `1080` for SOCKS5 |
-| **Username / Password** | Your proxy login, or leave both empty if it has none |
+| **Username / Password** | Your proxy login, or leave both empty if it has none. Once saved, the password is **never shown again**: the field stays empty, and leaving it empty keeps the saved one. **Remove saved password** clears it. |
 
 > ℹ️ **SOCKS5 isn't encrypted** between your phone and the proxy. Your app traffic inside is still HTTPS, but your proxy login and the hostnames you visit can be seen on the network path. **HTTPS** proxies protect both. With SOCKS5, hostnames are sent to the proxy unresolved, so DNS happens on the proxy, not on your phone.
 
@@ -34,11 +34,19 @@ The screen also has these buttons:
 - **Save** applies the settings to new connections straight away.
 - **Save & restart app** also drops connections that are already open.
 
-The screen works offline, so you can always fix a wrong or dead proxy.
+The screen works offline, so you can always fix a wrong or dead proxy. It also **blocks screenshots and screen recording**, and shows blank in the recent-apps view.
+
+**If your proxy stops working**, the app tells you instead of just failing to load. You see a short message such as:
+
+- "Can't reach your proxy";
+- "Your proxy rejected the login";
+- "Secure (TLS) connection to your proxy failed".
+
+It appears at most once a minute, only while the app is open, and only after a few failures in a row. It doesn't appear when your phone itself has no internet, so a dead Wi-Fi isn't blamed on the proxy.
 
 The patch options in Morphe Manager (proxy type, host, port, username, password) are optional **starting values**, if you'd rather have the proxy set from the first launch.
 
-> ⚠️ Your proxy login is stored in the app's private storage, or in plain text inside the APK if you set it as a patch option. Don't share your patched APK.
+> ⚠️ Your proxy login is stored in the app's private storage. A login set as a **patch option** is stored in plain text inside the APK, so for a private login, enter it in the app instead. Don't share your patched APK.
 
 ## 🔍 What the patch does
 
