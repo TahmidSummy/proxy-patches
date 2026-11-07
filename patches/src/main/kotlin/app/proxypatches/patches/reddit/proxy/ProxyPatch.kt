@@ -8,8 +8,11 @@ import app.morphe.patcher.patch.intOption
 import app.morphe.patcher.patch.resourcePatch
 import app.morphe.patcher.patch.stringOption
 import app.proxypatches.patches.shared.Constants.COMPATIBILITY_REDDIT
+import com.android.tools.smali.dexlib2.Opcode
+import com.android.tools.smali.dexlib2.iface.instruction.FiveRegisterInstruction
 import com.android.tools.smali.dexlib2.iface.instruction.ReferenceInstruction
 import com.android.tools.smali.dexlib2.iface.reference.FieldReference
+import com.android.tools.smali.dexlib2.iface.reference.MethodReference
 import org.w3c.dom.Element
 
 private const val EXTENSION_PACKAGE = "app.proxypatches.extension"
@@ -17,6 +20,10 @@ private const val EXTENSION_FORWARDER = "Lapp/proxypatches/extension/ProxyForwar
 private const val EXTENSION_CONFIG = "Lapp/proxypatches/extension/ProxyConfig;"
 private const val DNS_WARMUP_INITIALIZER = "Lcom/reddit/startup/dns/DnsLookupInitializer;"
 private const val SETTINGS_ACTIVITY = "$EXTENSION_PACKAGE.ProxySettingsActivity"
+private const val LINKS_REDIRECT =
+    "Lapp/proxypatches/extension/ProxyLinks;->redirectBrowserIntent(Landroid/content/Intent;)V"
+private const val MORPHE_OPEN_EXTERNALLY = "Lapp/morphe/extension/reddit/patches/OpenLinksExternallyPatch;"
+private const val ACTIVITY_START = "Landroid/app/Activity;->startActivity(Landroid/content/Intent;)V"
 
 /** Hostname, IPv4 or bracket-less IPv6. */
 private val HOST_REGEX = Regex("^[A-Za-z0-9.:\\-]{1,253}$")
@@ -61,7 +68,8 @@ val proxyPatch = bytecodePatch(
     description = "Routes all of the app's traffic through your HTTP, HTTPS or SOCKS5 proxy, with optional " +
         "username and password. Set it up in the app: long-press the app icon → Proxy settings (the login " +
         "is entered there, never baked into the APK). Nothing goes direct, even if the proxy is down, " +
-        "unless you turn on \"Run without proxy\" there.",
+        "unless you turn on \"Run without proxy\" there. With Morphe's \"Open links externally\", you can " +
+        "also pick which browser opens links.",
     default = false,
 ) {
     compatibleWith(COMPATIBILITY_REDDIT)
@@ -161,5 +169,24 @@ val proxyPatch = bytecodePatch(
             0,
             "const/4 v0, 0x0\nreturn v0",
         )
+
+        // ---- 6. Browser for Morphe's "Open links externally" (Proxy settings) ------------------
+        //    Morphe opens links in the system default browser. Just before each of its
+        //    startActivity calls, ProxyLinks.redirectBrowserIntent sends the intent to the browser
+        //    picked in Proxy settings (if any). Only if Morphe's patch is included. Morphe's patches
+        //    apply before "Proxy" (alphabetical), so its extension class is already here;
+        //    test-release.ps1 checks the hook.
+        mutableClassDefByOrNull(MORPHE_OPEN_EXTERNALLY)?.methods
+            ?.filter { it.name == "openLinksExternally" && it.implementation != null }
+            ?.forEach { m ->
+                val starts = m.implementation!!.instructions.withIndex().filter { (_, i) ->
+                    i.opcode == Opcode.INVOKE_VIRTUAL &&
+                        ((i as ReferenceInstruction).reference as MethodReference).toString() == ACTIVITY_START
+                }.map { (idx, i) -> idx to (i as FiveRegisterInstruction).registerD }
+                // Insert from the end so earlier indices stay valid.
+                starts.sortedByDescending { it.first }.forEach { (idx, reg) ->
+                    m.addInstruction(idx, "invoke-static/range { v$reg .. v$reg }, $LINKS_REDIRECT")
+                }
+            }
     }
 }

@@ -25,6 +25,9 @@ Then select the **Proxy** patch for Reddit and patch the app.
 | **Proxy host** | Hostname or IP of your proxy, for example `proxy.example.com` |
 | **Port** | For example `443` for HTTPS, `8080` for HTTP, or `1080` for SOCKS5 |
 | **Username / Password** | Your proxy login, or leave both empty if it has none. Once saved, the password is **never shown again**: the field stays empty, and leaving it empty keeps the saved one. **Remove saved password** clears it. |
+| **Browser for external links** | Only with Morphe's **Open links externally** turned on. Morphe opens links in your phone's default browser; pick another one here (for example Firefox). **System default** goes back to normal. Saved as soon as you pick. |
+
+> ⚠️ **Browsers don't use this app's proxy.** A link opened in Chrome, Firefox or any other browser uses that browser's own connection. If you want those pages on a proxy too, pick a browser that has its own proxy set up.
 
 > ℹ️ **SOCKS5 isn't encrypted** between your phone and the proxy. Your app traffic inside is still HTTPS, but your proxy login and the hostnames you visit can be seen on the network path. **HTTPS** proxies protect both. With SOCKS5, hostnames are sent to the proxy unresolved, so DNS happens on the proxy, not on your phone.
 
@@ -76,6 +79,7 @@ The only other traffic is the phone's DNS lookup of the proxy's own hostname.
 ### Limitations
 
 - **YouTube links** inside Reddit open the YouTube app, which isn't covered.
+- **Links opened in a browser** (Morphe's **Open links externally**, or Reddit's Custom Tabs) use that browser's connection, not this app's proxy.
 - **Push notifications** come through Google Play Services, outside the app.
 - **SOCKS5 is TCP only** (CONNECT). That's all the app needs, because QUIC/UDP is off whenever a proxy is set.
 - **SOCKS5 servers without IPv6** can answer "host unreachable" for sites that have IPv6 addresses. The patch retries those twice. The real fix is making the server prefer IPv4.
@@ -97,7 +101,7 @@ The only other traffic is the phone's DNS lookup of the proxy's own hostname.
 
 | 💊&nbsp;Patch | 📜&nbsp;Description | ⚙️&nbsp;Options |
 |----------|----------------|-----------|
-| [Proxy](#proxy) | Routes all of the app's traffic through your HTTP, HTTPS or SOCKS5 proxy, with optional username and password. Set it up in the app: long-press the app icon → Proxy settings (the login is entered there, never baked into the APK). Nothing goes direct, even if the proxy is down, unless you turn on "Run without proxy" there. | • Proxy host (optional)<br>• Proxy port<br>• Proxy type |
+| [Proxy](#proxy) | Routes all of the app's traffic through your HTTP, HTTPS or SOCKS5 proxy, with optional username and password. Set it up in the app: long-press the app icon → Proxy settings (the login is entered there, never baked into the APK). Nothing goes direct, even if the proxy is down, unless you turn on "Run without proxy" there. With Morphe's "Open links externally", you can also pick which browser opens links. | • Proxy host (optional)<br>• Proxy port<br>• Proxy type |
 
 </details>
 
