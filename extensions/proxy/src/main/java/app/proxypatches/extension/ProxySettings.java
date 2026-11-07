@@ -95,10 +95,26 @@ public final class ProxySettings {
         return new Values(ProxyConfig.host(), ProxyConfig.port(), ProxyConfig.type(), "", "", false);
     }
 
+    // ---- Browser for Morphe's "Open links externally" -------------------------------------------
+    private static volatile String linkBrowser = "";
+
+    /** Package name of the browser picked for external links, or empty for the system default. */
+    public static String linkBrowser() { return linkBrowser; }
+
+    public static void saveLinkBrowser(Context context, String browserPackage) {
+        String b = browserPackage == null ? "" : browserPackage;
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+                .putString("link_browser", b)
+                .commit();
+        linkBrowser = b;
+    }
+
     /** Loads saved settings. Called once at app start. */
     static void init(Context context) {
         appContext = context.getApplicationContext() != null ? context.getApplicationContext() : context;
         current = load(appContext);
+        SharedPreferences p = appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+        linkBrowser = p.getString("link_browser", "");
     }
 
     public static Values get() {

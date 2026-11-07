@@ -1,3 +1,9 @@
+## [1.4.0-dev.1](https://github.com/TahmidSummy/proxy-patches/compare/v1.3.2...v1.4.0-dev.1) (2026-11-07)
+
+### ✨ New Features
+
+* Choose which browser opens links with Morphe's "Open links externally" ([a6ef81c](https://github.com/TahmidSummy/proxy-patches/commit/a6ef81c0a99a11066dcbf5e0c7279723dd4ae6c5))
+
 ## [1.3.2](https://github.com/TahmidSummy/proxy-patches/compare/v1.3.1...v1.3.2) (2026-11-06)
 
 ### 🚀 Updated App Support

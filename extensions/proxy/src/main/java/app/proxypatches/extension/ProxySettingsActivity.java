@@ -1,6 +1,7 @@
 package app.proxypatches.extension;
 
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.Intent;
 import android.graphics.Typeface;
 import android.os.Bundle;
@@ -42,6 +43,7 @@ public class ProxySettingsActivity extends Activity {
     /** The saved password, used when the field is left empty. Never displayed. */
     private String savedPassword = "";
     private boolean removePassword;
+    private Button browserButton;
 
     private int radio(RadioGroup group, String label) {
         RadioButton b = new RadioButton(this);
@@ -125,6 +127,8 @@ public class ProxySettingsActivity extends Activity {
         });
         root.addView(show, matchWrap());
 
+        addLinksSection(root);
+
         LinearLayout buttons = new LinearLayout(this);
         buttons.setOrientation(LinearLayout.VERTICAL);
         buttons.setPadding(0, dp(16), 0, 0);
@@ -193,7 +197,8 @@ public class ProxySettingsActivity extends Activity {
 
     private ProxySettings.Values saveValues() {
         ProxySettings.Values v = readForm(false);
-        if (v != null) ProxySettings.save(this, v);
+        if (v == null) return null;
+        ProxySettings.save(this, v);
         return v;
     }
 
@@ -205,6 +210,57 @@ public class ProxySettingsActivity extends Activity {
             String result = ProxyForwarder.testProxy(v);
             runOnUiThread(() -> status.setText(result));
         }, "proxy-test").start();
+    }
+
+    // ---- Browser for Morphe's "Open links externally" ------------------------------------------
+
+    private void addLinksSection(LinearLayout root) {
+        TextView label = text("Browser for external links", 14);
+        label.setPadding(0, dp(24), 0, 0);
+        label.setTypeface(Typeface.DEFAULT_BOLD);
+        root.addView(label, matchWrap());
+        if (!ProxyLinks.morpheOpenExternallyIncluded()) {
+            root.addView(text("Needs Morphe's \"Open links externally\" patch, which isn't in this app.", 12));
+            return;
+        }
+        root.addView(text("When Morphe's \"Open links externally\" is on, links open in this browser " +
+                "instead of the phone's default. That browser uses its own connection, not this app's proxy.", 12));
+        browserButton = button("");
+        browserButton.setOnClickListener(x -> pickBrowser());
+        root.addView(browserButton, matchWrap());
+        updateBrowserButton();
+    }
+
+    private void updateBrowserButton() {
+        String pkg = ProxySettings.linkBrowser();
+        String name = pkg.isEmpty() ? "System default"
+                : ProxyLinks.isInstalled(this, pkg) ? ProxyLinks.labelOf(this, pkg)
+                : "System default (" + pkg + " isn't installed)";
+        browserButton.setText("Browser: " + name);
+    }
+
+    private void pickBrowser() {
+        java.util.List<ProxyLinks.Browser> browsers = ProxyLinks.installedBrowsers(this);
+        String current = ProxySettings.linkBrowser();
+        String[] names = new String[browsers.size() + 1];
+        names[0] = "System default";
+        int checked = 0;
+        for (int i = 0; i < browsers.size(); i++) {
+            names[i + 1] = browsers.get(i).label;
+            if (browsers.get(i).packageName.equals(current)) checked = i + 1;
+        }
+        new AlertDialog.Builder(this)
+                .setTitle("Open external links in")
+                .setSingleChoiceItems(names, checked, (d, which) -> {
+                    String pkg = which == 0 ? "" : browsers.get(which - 1).packageName;
+                    ProxySettings.saveLinkBrowser(this, pkg);
+                    updateBrowserButton();
+                    Toast.makeText(this, "Saved. External links open in " + names[which] + ".",
+                            Toast.LENGTH_SHORT).show();
+                    d.dismiss();
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
     }
 
     private void restartApp() {
